@@ -11,6 +11,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react"
+import { useEffect } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -32,11 +33,14 @@ import {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  /** When this value changes, the table goes back to the first page. */
+  resetPageKey?: string
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
+  resetPageKey,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
     data,
@@ -44,6 +48,11 @@ export function DataTable<TData, TValue>({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   })
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only reset when the key changes
+  useEffect(() => {
+    table.setPageIndex(0)
+  }, [resetPageKey])
 
   return (
     <div className="flex flex-col gap-4">
