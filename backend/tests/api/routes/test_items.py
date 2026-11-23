@@ -24,6 +24,30 @@ def test_create_item(
     assert "owner_id" in content
 
 
+def test_create_item_trims_title(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/items/",
+        headers=superuser_token_headers,
+        json={"title": "  Padded title \t\n", "description": "d"},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] == "Padded title"
+
+
+def test_create_item_blank_title(
+    client: TestClient, superuser_token_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        f"{settings.API_V1_STR}/items/",
+        headers=superuser_token_headers,
+        json={"title": "   \t ", "description": "d"},
+    )
+    assert response.status_code == 422
+    assert "Title must not be blank" in response.text
+
+
 def test_read_item(
     client: TestClient, superuser_token_headers: dict[str, str], db: Session
 ) -> None:
@@ -95,6 +119,46 @@ def test_update_item(
     assert content["description"] == data["description"]
     assert content["id"] == str(item.id)
     assert content["owner_id"] == str(item.owner_id)
+
+
+def test_update_item_trims_title(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    item = create_random_item(db)
+    response = client.put(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=superuser_token_headers,
+        json={"title": "  Padded update  "},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] == "Padded update"
+
+
+def test_update_item_blank_title(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    item = create_random_item(db)
+    response = client.put(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=superuser_token_headers,
+        json={"title": "   "},
+    )
+    assert response.status_code == 422
+    assert "Title must not be blank" in response.text
+
+
+def test_update_item_omitted_title_unchanged(
+    client: TestClient, superuser_token_headers: dict[str, str], db: Session
+) -> None:
+    item = create_random_item(db)
+    original_title = item.title
+    response = client.put(
+        f"{settings.API_V1_STR}/items/{item.id}",
+        headers=superuser_token_headers,
+        json={"description": "New description"},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] == original_title
 
 
 def test_update_item_not_found(
