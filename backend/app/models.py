@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from pydantic import EmailStr
+from pydantic import EmailStr, field_validator
 from sqlalchemy import DateTime
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -76,15 +76,32 @@ class ItemBase(SQLModel):
     description: str | None = Field(default=None, max_length=255)
 
 
+def strip_title(value: object) -> object:
+    """Trim surrounding whitespace and reject blank titles."""
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            raise ValueError("Title must not be blank")
+    return value
+
+
 # Properties to receive on item creation
 class ItemCreate(ItemBase):
-    pass
+    @field_validator("title", mode="before")
+    @classmethod
+    def _strip_title(cls, value: object) -> object:
+        return strip_title(value)
 
 
 # Properties to receive on item update
 class ItemUpdate(SQLModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=255)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _strip_title(cls, value: object) -> object:
+        return strip_title(value)
 
 
 # Database model, database table inferred from class name
