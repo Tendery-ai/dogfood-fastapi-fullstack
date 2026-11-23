@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, type Page, test } from "@playwright/test"
 import { createUser } from "./utils/privateApi"
 import {
   randomEmail,
@@ -72,6 +72,89 @@ test.describe("Items management", () => {
     await page.getByLabel("Title").blur()
 
     await expect(page.getByText("Title is required")).toBeVisible()
+  })
+
+  test.describe("Search", () => {
+    const search = (page: Page) => page.getByLabel("Search items")
+
+    test("Filters by title and description, ignoring case", async ({
+      page,
+    }) => {
+      const token = Math.random().toString(36).substring(2, 10)
+      const byTitle = `Title ${token}`
+      const byDescription = `Other ${randomItemTitle()}`
+      const unrelated = randomItemTitle()
+
+      for (const [title, description] of [
+        [byTitle, "plain"],
+        [byDescription, `has ${token} inside`],
+        [unrelated, "nothing"],
+      ]) {
+        await page.getByRole("button", { name: "Add Item" }).click()
+        await page.getByLabel("Title").fill(title)
+        await page.getByLabel("Description").fill(description)
+        await page.getByRole("button", { name: "Save" }).click()
+        await expect(page.getByText("Item created successfully")).toBeVisible()
+        await expect(page.getByRole("dialog")).not.toBeVisible()
+      }
+
+      await search(page).fill(token.toUpperCase())
+
+      await expect(page.getByText(byTitle)).toBeVisible()
+      await expect(page.getByText(byDescription)).toBeVisible()
+      await expect(page.getByText(unrelated)).not.toBeVisible()
+
+      await search(page).fill("")
+      await expect(page.getByText(unrelated)).toBeVisible()
+    })
+
+    test("Shows a message when nothing matches", async ({ page }) => {
+      await search(page).fill(`no-match-${Math.random().toString(36)}`)
+
+      await expect(page.getByText("No items match your search")).toBeVisible()
+    })
+
+    test("Debounces typing and sends a single request", async ({ page }) => {
+      const keywords: (string | null)[] = []
+      await page.route("**/api/v1/items/?*", async (route) => {
+        keywords.push(new URL(route.request().url()).searchParams.get("q"))
+        await route.continue()
+      })
+
+      await search(page).pressSequentially("abc", { delay: 20 })
+      await expect(page.getByText("No items match your search")).toBeVisible()
+
+      expect(keywords).toContain("abc")
+      expect(keywords).not.toContain("a")
+      expect(keywords).not.toContain("ab")
+    })
+
+    test("Returns to page 1 when the keyword changes", async ({ page }) => {
+      const makeItems = (prefix: string) =>
+        Array.from({ length: 12 }, (_, n) => ({
+          id: `00000000-0000-0000-0000-${prefix}${String(n).padStart(11, "0")}`,
+          title: `${prefix}-item-${n}`,
+          description: null,
+          owner_id: "00000000-0000-0000-0000-000000000000",
+          created_at: null,
+        }))
+
+      await page.route("**/api/v1/items/?*", async (route) => {
+        const q = new URL(route.request().url()).searchParams.get("q")
+        const data = makeItems(q ? "bbbbbbbbbbbb" : "aaaaaaaaaaaa")
+        await route.fulfill({ json: { data, count: data.length } })
+      })
+
+      await page.goto("/items")
+      await page.getByRole("button", { name: "Go to next page" }).click()
+      const previous = page.getByRole("button", { name: "Go to previous page" })
+      await expect(previous).toBeEnabled()
+
+      await search(page).fill("item")
+
+      await expect(page.getByText("bbbbbbbbbbbb-item-0")).toBeVisible()
+      await expect(previous).toBeDisabled()
+    })
   })
 
   test.describe("Edit and Delete", () => {
